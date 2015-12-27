@@ -1,0 +1,187 @@
+---
+output: pdf_document
+---
+#Prediction Assignment Writeup
+
+Author: Thomas Lee Wai Siong
+
+Date: Friday, December 25, 2015
+
+Source: [PDF, Markdown, Html are available at rpubs](http://rpubs.com/flyingfox22/PracticalMachineLearning)
+
+#Executive Summary
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the **belt**, **forearm**, **arm**, and **dumbell** of **6** participants. They were asked to perform barbell lifts correctly and incorrectly in **5** different ways. More information is available from the website [here](http://groupware.les.inf.puc-rio.br/har) (see the section on the Weight Lifting Exercise Dataset). 
+
+#Dataset
+The data for this project come from this [source](http://groupware.les.inf.puc-rio.br/har).
+
+* The training data for this project are available [here](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv)
+
+* The test data are available [here](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)
+
+#Data Loading From CSV
+```{r}
+TrainData<-read.csv("pml-training.csv", header=T, na.strings=c("NA", "#DIV/0!"))
+TestData<-read.csv("pml-testing.csv", header=T, na.string=c("NA", "#DIV/0!"))
+```
+
+#Basic Data Exploration
+```{r, results="hide"}
+dim(TrainData)
+dim(TestData)
+
+head(TrainData)
+head(TestData)
+
+summary(TrainData)
+summary(TestData)
+
+str(TrainData)
+str(TestData)
+```
+
+#Cleaning The Data
+From above, we can see that the data contains mostly numerical features. However, many of them contain **nonstandard coded missing values**, standard **NA**, empty strings **""**, and error expressions **"#DIV/0!"**.
+
+All variables with at least one **NA** have to be excluded from the analysis.
+
+```{r}
+## before clean
+dim(TrainData)
+NoNATrainData<-TrainData[, apply(TrainData, 2, function(x) !any(is.na(x)))] 
+## after clean
+dim(NoNATrainData)
+```
+
+Next, variables related to time and user information also have to be excluded from the analysis.
+```{r}
+## before clean
+dim(NoNATrainData)
+CleanTrainData<-NoNATrainData[,-c(1:8)]
+## after clean
+dim(CleanTrainData)
+```
+
+Same variables will be maintained in the test data set in order to be used for predicting the 20 test cases provided.
+```{r}
+## before clean
+dim(TestData)
+CleanTestData<-TestData[,names(CleanTrainData[,-52])]
+## after clean
+dim(CleanTestData)
+```
+
+Besides, the outcome variable classe with values are:
+
+* exactly according to the specification (Class A), 
+
+* throwing the elbows to the front (Class B), 
+
+* lifting the dumbbell only halfway (Class C), 
+
+* lowering the dumbbell only halfway (Class D) 
+
+* throwing the hips to the front (Class E).
+
+#Data Partitioning and Prediction Process
+In order to have a better model validation and performance, dataset will be further seperated into 2 sub dataset which are:
+
+* a training set containing 60% of the data 
+
+* a validation set containing 40% of the data (Please take note that this validation set will be held out at the end and the testing set will be used for all model selection only.)
+
+```{r}
+library(ggplot2)
+library(lattice)
+library(caret)
+inTrain<-createDataPartition(y=CleanTrainData$classe, p=0.60,list=F)
+train_set <- CleanTrainData[inTrain, ]
+test_set <- CleanTrainData[-inTrain, ]
+#Training and test set dimensions
+dim(train_set)
+dim(test_set)
+```
+
+#Exploratory Analysis
+We will focus on the traning set at this level only.
+
+Firstly, we have excluded missing values during data cleansing. This allow us to only consider any variable that contain no missing values for the model that we are going to apply later.
+
+#Model Selection
+The models we try are:
+
+* Random Forest
+
+* Gradient Boosted Machines
+
+#Cross-validation
+To assess model performance, we perform 5-fold cross-validation. This gives a good estimate for the out-of-sample accuracy.
+
+#Model Selection 1 - Random Forest
+We show the procedure Random Forest.
+
+```{r}
+library(randomForest)
+set.seed(13333)
+fitControl2<-trainControl(method="cv", number=5, allowParallel=T, verbose=T)
+rffit<-train(classe~.,data=train_set, method="rf", trControl=fitControl2, verbose=F)
+rffit$finalModel
+class(rffit)
+
+predict_rf<-predict(rffit, newdata=test_set)
+#we can see some statistics of the fit here:
+confusionMatrix(predict_rf, test_set$classe)
+```
+
+Generated algorithm above examined the accuracy and estimated error of prediction in the partition of training set. 
+It gaves 5-fold an accuracy of 99% with a 95% CI [0.9925, 0.9959] was achieved accompanied by a Kappa value of 0.99.
+Random Forest classifier has given extremely high accuracy estimate of 99%
+
+```{r}
+predict_20<-predict(rffit, newdata=CleanTestData)
+# Output for the prediction of the 20 cases provided
+predict_20
+```
+
+#Model Selection 2 - Gradient Boosted Machines
+```{r}
+fitControl2<-trainControl(method="cv", number=5, allowParallel=T, verbose=T)
+gmbfit<-train(classe~.,data=train_set, method="gbm", trControl=fitControl2, verbose=F)
+gmbfit$finalModel
+class(gmbfit)
+
+predict_gmb<-predict(gmbfit, newdata=test_set)
+#we can see some statistics of the fit here:
+confusionMatrix(predict_gmb, test_set$classe)
+
+predict_train<-predict(gmbfit, newdata=train_set)
+#we can see some statistics of the fit here:
+confusionMatrix(predict_train, train_set$classe)
+```
+
+Boosted algorithm above was also run to confirm and be able to compare predictions.
+It gaves 5-fold an accuracy of 96% with a 95% CI [0.9547, 0.9636] was achieved accompanied by a Kappa value of 0.95.
+Gradient Boosted Machines approach presented less accuracy (95%)
+However, the predictions for the 20 test cases were compared match was same for both ran algorimths above.
+
+```{r}
+predict_20<-predict(gmbfit, newdata=CleanTestData)
+# Output for the prediction of the 20 cases provided
+predict_20
+```
+
+#Applying the final model
+Finally, we apply the model to the 20 unlabeled assignment cases. The script below was used to obtain single text files to be uploaded to the courses web site to comply with the submission assigment. 20 out of 20 hits also confirmed the accuracy of the obtained models.
+
+```{r}
+getwd()
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+pml_write_files(predict_20)
+```
+
